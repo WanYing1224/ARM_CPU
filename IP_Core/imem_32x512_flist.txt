@@ -1,0 +1,12 @@
+# Output products list for <imem_32x512>
+imem_32x512.asy
+imem_32x512.mif
+imem_32x512.ngc
+imem_32x512.sym
+imem_32x512.v
+imem_32x512.veo
+imem_32x512.vhd
+imem_32x512.vho
+imem_32x512.xco
+imem_32x512_flist.txt
+imem_32x512_xmdf.tcl
