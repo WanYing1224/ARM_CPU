@@ -199,14 +199,14 @@ module ARM_pipeline (
 	 wire [7:0] addra_word = mem_alu_res[10:3];
 
     // Data Memory Instantiation 
-     dmem_64x256 DataMem (
+    dmem_64x256 DataMem (
         .clka(clk),
         .wea(wea_bus),
         .addra(addra_word),
         .dina(mem_store_data),
         .douta(mem_out_raw),
         .clkb(1'b0),
-        .web(8'b0),         // <-- 8-bit constant
+        .web(|wea),         // <-- 8-bit constant
         .addrb(8'd0),
         .dinb(64'd0),
         .doutb()
