@@ -1,163 +1,104 @@
 `timescale 1ns / 1ps
-// =============================================================================
-// ARM_pipeline_tb.v  —  Corrected testbench for the Quad-Threaded ARM Core
-//
-// Fixes applied vs. original:
-//   1. wea forced as 1-bit (not 8-bit)
-//   2. Readback uses uut.DataMem.douta (not uut.mem_out_raw)
-//   3. Readback synchronises to clock edges (not blind #20 delay)
-//   4. Loop reads 5 x 64-bit words (holds 10 x 32-bit sorted integers)
-//   5. PC / instruction trace added so stalls are visible
-//   6. Simulation time extended to 500 us to survive slow convergence
-// =============================================================================
+// ARM_pipeline_tb.v
+// Use with: imem = sort.coe (21 instructions, register-based sort)
+//           dmem = data.coe (10 values, one per 64-bit BRAM word in [31:0])
 
 module ARM_pipeline_tb;
 
-    // -------------------------------------------------------------------------
-    // DUT ports
-    // -------------------------------------------------------------------------
     reg clk;
     reg rst;
-
-    // -------------------------------------------------------------------------
-    // File-I/O handles
-    // -------------------------------------------------------------------------
     integer file_out;
     integer i;
+    reg [7:0] bram_addr;
 
-    // -------------------------------------------------------------------------
-    // Instantiate DUT
-    // -------------------------------------------------------------------------
     ARM_pipeline uut (
         .clk(clk),
         .rst(rst)
     );
 
-    // -------------------------------------------------------------------------
-    // Clock  —  10 ns period (100 MHz)
-    // -------------------------------------------------------------------------
+    // 10 ns clock (100 MHz)
     initial clk = 0;
     always #5 clk = ~clk;
 
-    // -------------------------------------------------------------------------
-    // Main test sequence
-    // -------------------------------------------------------------------------
     initial begin
-        // 1. Hold reset for 10 cycles
         rst = 1;
         repeat (10) @(posedge clk);
-        @(negedge clk);          // release on a negedge for clean signal
+        @(negedge clk);
         rst = 0;
 
         $display("==================================================");
-        $display("=== ARM Core Simulation Started                ===");
+        $display("=== ARM Core Simulation Started  t=%0t ns", $time);
         $display("==================================================");
 
-        // 2. Run long enough for all 4 threads to complete the sort.
-        //    Thread 0 gets 1/4 of the clock bandwidth.
-        //    ~55 instructions x 4-cycle interleave x safety margin = ~500 us.
-        #500_000;
+        // sort.coe: 21 instructions, 10 elements, pointer-based bubble sort.
+        // Worst case ~45 swaps * ~4 instrs * 4-thread interleave * 4 pipeline stages
+        // = ~2880 cycles = ~29000 ns. Use 100 us for comfortable margin.
+        #100_000;
 
         $display("==================================================");
-        $display("=== Simulation complete — dumping memory       ===");
+        $display("=== Simulation complete at t=%0t ns", $time);
         $display("==================================================");
 
-        // 3. Open result file
         file_out = $fopen("sort_result.txt", "w");
         if (file_out == 0) begin
-            $display("ERROR: Could not open sort_result.txt");
+            $display("ERROR: $fopen failed");
             $finish;
         end
 
-        // 4. Freeze any further CPU writes to data memory
-        //    wea is 1-bit on the dmem_64x256 IP core
+        // Freeze writes while we read back
         force uut.DataMem.wea = 1'b0;
 
-        $fdisplay(file_out, "=== Final Sorted Data Memory Content ===");
-        $fdisplay(file_out, "%-6s  %-18s  %-18s  %-12s  %-12s",
-                  "Word", "[63:32] hex", "[31:0]  hex", "high (dec)", "low  (dec)");
-        $fdisplay(file_out, "%s", {70{"-"}});
+        $fdisplay(file_out, "=== Sorted Array (sort.coe + data.coe) ===");
+        $fdisplay(file_out, "Element  BRAM_addr  Hex         Decimal");
+        $fdisplay(file_out, "-------  ---------  ----------  -------");
 
-        // 5. Read back 5 x 64-bit words  =  10 x 32-bit sorted integers.
-        //    Each pair is packed: word[31:0] = lower byte-address (even index),
-        //                         word[63:32] = higher byte-address (odd index).
-        for (i = 0; i < 5; i = i + 1) begin
-            force uut.DataMem.addra = i[7:0];
-            @(posedge clk);   // clock the address into the synchronous BRAM
-            @(posedge clk);   // one more cycle for registered output to settle
-
-            $fdisplay(file_out, "%-60d  0x%08h          0x%08h          %-12d  %-12d",
-                      i,
-                      uut.DataMem.douta[63:32],
+        // sort.coe places element i at byte address i*8.
+        // BRAM addra = byte_addr >> 2 = i*8 >> 2 = i*2.
+        // Value is always in douta[31:0] (bit[2] of byte addr is always 0).
+        for (i = 0; i < 10; i = i + 1) begin
+            bram_addr = i * 2;
+            force uut.DataMem.addra = bram_addr;
+            @(posedge clk);
+            @(posedge clk);
+            $fdisplay(file_out, "%6d   %6d     0x%08h  %0d",
+                      i, i*2,
                       uut.DataMem.douta[31:0],
-                      $signed(uut.DataMem.douta[63:32]),
                       $signed(uut.DataMem.douta[31:0]));
-
-            $display("Word %0d | [63:32]=0x%08h (%0d)  [31:0]=0x%08h (%0d)",
-                     i,
-                     uut.DataMem.douta[63:32],
-                     $signed(uut.DataMem.douta[63:32]),
+            $display("Element %2d (BRAM addr %2d): 0x%08h = %5d",
+                     i, i*2,
                      uut.DataMem.douta[31:0],
                      $signed(uut.DataMem.douta[31:0]));
         end
 
-        // 6. Release forced signals and close file
         release uut.DataMem.wea;
         release uut.DataMem.addra;
         $fclose(file_out);
 
-        $display("==================================================");
-        $display("=== Results saved to sort_result.txt           ===");
-        $display("=== Expected (ascending): -455,-56,0,2,10,65,98,123,125,323 ===");
-        $display("==================================================");
+        $display("Expected: -455, -56, 0, 2, 10, 65, 98, 123, 125, 323");
         $finish;
     end
 
-    // -------------------------------------------------------------------------
-    // Real-time monitor: data memory WRITES
-    // -------------------------------------------------------------------------
+    // DMEM write monitor — shows each swap
     always @(posedge clk) begin
-        if (!rst && uut.mem_mem_we && uut.mem_cond_passed) begin
-            $display("[%0t ns] DMEM WRITE | Thread %0d | ByteAddr=0x%04h | Data=0x%016h",
-                     $time,
-                     uut.mem_tid,
+        if (!rst && uut.mem_mem_we && uut.mem_cond_passed)
+            $display("[%8t] WRITE T%0d ByteAddr=0x%04h Data[31:0]=0x%08h (%0d)",
+                     $time, uut.mem_tid,
                      uut.mem_alu_res[15:0],
-                     uut.aligned_store_data);
-        end
+                     uut.aligned_store_data[31:0],
+                     $signed(uut.aligned_store_data[31:0]));
     end
 
-    // -------------------------------------------------------------------------
-    // Real-time monitor: data memory READS
-    // -------------------------------------------------------------------------
+    // Branch taken monitor
     always @(posedge clk) begin
-        if (!rst && uut.mem_is_load && uut.mem_cond_passed) begin
-            $display("[%0t ns] DMEM READ  | Thread %0d | ByteAddr=0x%04h",
-                     $time,
-                     uut.mem_tid,
-                     uut.mem_alu_res[15:0]);
-        end
+        if (!rst && uut.ex_is_branch && uut.cond_passed)
+            $display("[%8t] BRANCH T%0d -> 0x%08h",
+                     $time, uut.ex_tid, uut.ex_branch_target);
     end
 
-    // -------------------------------------------------------------------------
-    // Real-time monitor: PC advance per thread  (optional — comment out if
-    // the transcript becomes too noisy once the pipeline is working)
-    // -------------------------------------------------------------------------
-    always @(posedge clk) begin
-        if (!rst) begin
-            $display("[%0t ns] IF | Thread %0d | PC=0x%08h | Instr=0x%08h",
-                     $time,
-                     uut.thread_sel,
-                     uut.curr_pc,
-                     uut.if_instr);
-        end
-    end
-
-    // -------------------------------------------------------------------------
-    // Watchdog  —  abort if something is clearly wrong and we spin forever
-    // -------------------------------------------------------------------------
+    // Watchdog
     initial begin
-        #1_000_000;
-        $display("WATCHDOG: simulation exceeded 1 ms — forcing stop.");
+        #500_000;
+        $display("WATCHDOG: 500 us — forcing stop");
         $finish;
     end
 
