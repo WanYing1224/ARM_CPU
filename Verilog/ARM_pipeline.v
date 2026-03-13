@@ -74,6 +74,9 @@ module ARM_pipeline (
     // RegFile outputs arrays
     wire [63:0] id_r0 [3:0];
     wire [63:0] id_r1 [3:0];
+	 
+	 wire is_store = (active_id_instr[27:26] == 2'b01) && (active_id_instr[20] == 1'b0);
+    wire [2:0] r1_addr_mux = is_store ? active_id_instr[14:12] : active_id_instr[2:0];
 
     // Generate 4 RegFiles for 4 Threads 
     genvar i;
@@ -86,7 +89,7 @@ module ARM_pipeline (
                 .waddr(wb_addr),
                 .wdata(wb_data),
                 .r0addr(active_id_instr[18:16]),
-                .r1addr(active_id_instr[14:12]),
+                .r1addr(r1_addr_mux),
                 .r0data(id_r0[i]),
                 .r1data(id_r1[i])
             );
@@ -117,7 +120,7 @@ module ARM_pipeline (
             ex_imm     <= {{52{active_id_instr[11]}}, active_id_instr[11:0]}; // Sign-extend
             
             // Generate pipeline control signals from the CURRENT ID instruction
-            ex_use_imm <= (active_id_instr[27:26] == 2'b01);
+            ex_use_imm <= (active_id_instr[27:26] == 2'b01) || (active_id_instr[27:26] == 2'b00 && active_id_instr[25] == 1'b1);
             ex_is_load <= (active_id_instr[27:26] == 2'b01) && (active_id_instr[20] == 1'b1);
 
             case (active_id_instr[24:21])
@@ -250,7 +253,7 @@ module ARM_pipeline (
     assign wb_we   = wb_we_reg && wb_cond_passed_reg;
     assign wb_addr = wb_waddr_reg;
 
-    wire [31:0] extracted_32bit_word = wb_alu_res_reg[2] ? 
+    wire [31:0] extracted_32bit_word = wb_alu_res_reg[2] ?
                                        wb_mem_data_reg[63:32] : 
                                        wb_mem_data_reg[31:0];
 
