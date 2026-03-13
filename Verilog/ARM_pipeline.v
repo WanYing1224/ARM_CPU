@@ -40,18 +40,21 @@ module ARM_pipeline (
     always @(posedge clk) begin
         if (rst) begin
             pc[0] <= 32'h000; 
-				pc[1] <= 32'h400; 
-				pc[2] <= 32'h800; 
-				pc[3] <= 32'hC00;
+            pc[1] <= 32'h400; 
+            pc[2] <= 32'h800; 
+            pc[3] <= 32'hC00;
+
             thread_sel <= 0;
+            
         end else begin
-            // NEW: Hardware Branching Support
-            if (ex_is_branch && mem_cond_passed) begin
+            if (ex_is_branch && cond_passed) begin
                 pc[ex_tid] <= ex_branch_target;
             end 
             else if (curr_pc[9:0] < 10'h114) begin
                 pc[thread_sel] <= pc[thread_sel] + 4;
             end
+            
+            // thread_sel is ONLY incremented in this single block
             thread_sel <= thread_sel + 1;
         end
     end
@@ -144,7 +147,7 @@ module ARM_pipeline (
             ex_we      <= (active_id_instr[27:26] == 2'b00) || 
                           (active_id_instr[27:26] == 2'b01 && active_id_instr[20] == 1'b1);
             ex_mem_we  <= (active_id_instr[27:26] == 2'b01) && (active_id_instr[20] == 1'b0);
-            ex_waddr   <= active_id_instr[14:12];
+            ex_waddr   <= active_id_instr[15:12];
 				
 				ex_is_branch     <= (active_id_instr[27:26] == 2'b10);
             ex_branch_offset <= active_id_instr[23:0];
@@ -225,13 +228,13 @@ module ARM_pipeline (
     
     // 8-bit Byte Enable mask based on bit [2] (the 4-byte offset)
     wire [7:0] wea_mask = mem_alu_res[2] ? 8'hF0 : 8'h0F;
-    wire [7:0] wea_bus = (mem_mem_we && mem_cond_passed) ? (mem_alu_res[2] ? 8'hF0 : 8'h0F) : 8'h00;
+    //wire [7:0] wea_bus = (mem_mem_we && mem_cond_passed) ? (mem_alu_res[2] ? 8'hF0 : 8'h0F) : 8'h00;
 
     wire [63:0] aligned_store_data = mem_alu_res[2] ? {mem_store_data[31:0], 32'd0} : {32'd0, mem_store_data[31:0]};
 	 
     dmem_64x256 DataMem (
         .clka(clk),
-        .wea(wea_bus),
+        .wea(actual_mem_write),
         .addra(mem_alu_res[9:2]),
         .dina(aligned_store_data),
         .douta(mem_out_raw),

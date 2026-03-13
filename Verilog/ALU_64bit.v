@@ -53,40 +53,29 @@ module ALU_64bit (
     );
 
     // 5. Multiplexer & Output Register
-    always @(posedge clk) begin
-        if (rst) begin
-            Z <= 64'd0;
-            overflow <= 1'b0;
-        end else begin
-            // Default: reset overflow unless it's arithmetic
-            overflow <= 1'b0; 
-            
-            case (aluctrl[3:2]) // Use upper bits to select Unit
-                2'b00: begin 
-                    // 00XX -> Arithmetic or Logic
-                    if (aluctrl[1] == 1'b0) begin 
-                         // 0000 (ADD) or 0001 (SUB)
-                         Z <= arith_res;
-                         overflow <= arith_ovf;
-                    end else begin 
-                         // 0010 (AND) or 0011 (OR)
-                         Z <= logic_res;
-                    end
-                end
+    assign zero = (Z == 64'd0);
 
-                2'b01: begin
-                    // 01XX -> XNOR, CMP, Shift
-                    case (aluctrl[1:0])
-                        2'b00: Z <= logic_res; // 0100 (XNOR - reused logic unit path)
-                        2'b01: Z <= comp_res;  // 0101 (CMP)
-                        2'b10: Z <= shift_res; // 0110 (SHL)
-                        2'b11: Z <= shift_res; // 0111 (SHR)
-                    endcase
+    always @(*) begin
+        Z = 64'd0;
+        overflow = 1'b0;
+        case (aluctrl[3:2])
+            2'b00: begin
+                if (!aluctrl[1]) begin 
+                    Z = arith_res; 
+                    overflow = arith_ovf; 
+                end else begin
+                    Z = logic_res;
                 end
-                
-                default: Z <= 64'd0;
+            end
+            2'b01: case (aluctrl[1:0])
+                2'b00: Z = logic_res;
+                2'b01: Z = comp_res;
+                default: Z = shift_res;
             endcase
-        end
+            default: begin
+                Z = 64'd0;
+            end
+        endcase
     end
 
 endmodule
