@@ -6,6 +6,10 @@ module ARM_pipeline_tb;
     reg clk;
     reg rst;
 
+    // --- Internal Variables for File I/O ---
+    integer file_out;
+    integer i;
+
     // --- Instantiate the Unit Under Test (UUT) ---
     ARM_pipeline uut (
         .clk(clk),
@@ -32,47 +36,60 @@ module ARM_pipeline_tb;
         $display("==================================================");
 
         // 3. Wait for Bubble Sort to complete.
-        // A 10-element bubble sort takes roughly O(N^2) iterations.
-        // Because your ZOMT design interleaves 4 threads, Thread 0 
-        // effectively runs at 1/4th the clock speed. 
-        // 200,000 ns (20,000 cycles) is plenty of time for it to finish.
+        // Thread 0 runs at 1/4 speed due to 4-thread interleaving.
         #200000; 
 
         $display("==================================================");
-        $display("=== Simulation Complete                        ===");
+        $display("=== Simulation Complete: Writing to File       ===");
+        $display("==================================================");
+
+        // 4. Open Output File
+        file_out = $fopen("sort_result.txt", "w");
+        
+        if (file_out == 0) begin
+            $display("Error: Could not open sort_result.txt for writing.");
+        end else begin
+            // 5. Force control of Memory Bus to read final values
+            // We use 'force' to override the CPU control signals
+            force uut.DataMem.wea = 8'h00; 
+
+            $fdisplay(file_out, "=== Final Sorted Data Memory Content ===");
+            
+            // Loop through the first 5 lines (which hold 10 integers)
+            for (i = 0; i < 5; i = i + 1) begin
+                force uut.DataMem.addra = i[7:0];
+                #20; // Wait for memory read latency
+                
+                $fdisplay(file_out, "Line %0d (64-bit Hex): %h", i, uut.mem_out_raw);
+                $display("Transcript -> Line %0d: %h", i, uut.mem_out_raw);
+            end
+            
+            // 6. Release hardware control and close file
+            release uut.DataMem.wea;
+            release uut.DataMem.addra;
+            $fclose(file_out);
+            
+            $display("Success: Results saved to 'sort_result.txt'");
+        end
+
         $display("==================================================");
         $finish;
     end
 
-    // --- Memory Write Monitor ---
-    // This block prints exactly what the CPU is writing to Data Memory.
-    // As the Bubble Sort runs, you should see it swapping your packed 32-bit values.
+    // --- Real-Time Memory Write Monitor ---
     always @(posedge clk) begin
         if (uut.mem_mem_we && uut.mem_cond_passed) begin
             $display("Time: %0t ns | Thread: %0d | DMEM Write -> Byte Addr: 0x%04h | Data: 0x%016h",
-                     $time, uut.ex_tid, uut.mem_alu_res[15:0], uut.mem_store_data);
+                     $time, uut.mem_tid, uut.mem_alu_res[15:0], uut.aligned_store_data);
         end
     end
 
-    // --- Memory Read Monitor ---
-    // This tracks loads (LDR) from the memory to verify the 32-bit extraction
-    // logic you added to the Writeback stage is fetching the correct half.
+    // --- Real-Time Memory Read Monitor ---
     always @(posedge clk) begin
         if (uut.mem_is_load && uut.mem_cond_passed) begin
             $display("Time: %0t ns | Thread: %0d | DMEM Read  <- Byte Addr: 0x%04h",
-                     $time, uut.ex_tid, uut.mem_alu_res[15:0]);
+                     $time, uut.mem_tid, uut.mem_alu_res[15:0]);
         end
     end
-
-    // --- Register Writeback Monitor (Optional but helpful) ---
-    // Uncomment this if you want to trace every single register update
-    /*
-    always @(posedge clk) begin
-        if (uut.wb_we_reg && uut.wb_cond_passed_reg) begin
-            $display("Time: %0t ns | Thread: %0d | RegWrite   -> R%0d = 0x%08h",
-                     $time, uut.wb_tid, uut.wb_waddr_reg, uut.wb_data[31:0]);
-        end
-    end
-    */
 
 endmodule
