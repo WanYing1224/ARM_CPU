@@ -70,9 +70,9 @@ module ARM_pipeline_tb;
             for (idx = 0; idx < NUM_DUMP_WORDS; idx = idx + 1) begin
                 // hierarchical read from the memory instance inside the DUT
                 // This expects the instance inside the DUT to be named DataMem and to have 'mem' array
-                $fwrite(fd, "%0d: 0x%016h\n", idx, uut.DataMem.mem[start_word_index + idx]);
-                $display("%0d: 0x%016h (signed %0d)",
-                         idx, uut.DataMem.mem[start_word_index + idx], $signed(uut.DataMem.mem[start_word_index + idx]));
+                //$fwrite(fd, "%0d: 0x%016h\n", idx, uut.DataMem.mem[start_word_index + idx]);
+                //$display("%0d: 0x%016h (signed %0d)",
+                //         idx, uut.DataMem.mem[start_word_index + idx], $signed(uut.DataMem.mem[start_word_index + idx]));
             end
             $fclose(fd);
             $display("DMEM dump complete -> dmem_after_sim.hex");
@@ -108,67 +108,3 @@ module ARM_pipeline_tb;
 endmodule
 
 
-// ------------------------------------------------------------------
-// Behavioral replacement for dmem_64x256 (simulation-only)
-// ------------------------------------------------------------------
-module dmem_64x256(
-    addra,
-    addrb,
-    clka,
-    clkb,
-    dina,
-    dinb,
-    douta,
-    doutb,
-    wea,
-    web
-);
-    input  [7:0] addra;
-    input  [7:0] addrb;
-    input        clka;
-    input        clkb;
-    input  [63:0] dina;
-    input  [63:0] dinb;
-    output reg [63:0] douta;
-    output reg [63:0] doutb;
-    input  [7:0] wea;
-    input  [7:0] web;
-
-    reg [63:0] mem [0:255];
-
-    integer i;
-    integer b;
-    integer bb;
-
-    initial begin
-        // Try to read a simple hex init first (create dmem_init.hex if you want)
-        $display("behav_dmem: reading dmem_init.hex if present...");
-        $readmemh("dmem_init.hex", mem);
-        // Also try binary mif style as fallback (optional)
-        $display("behav_dmem: reading dmem_64x256.mif (binary) if present...");
-        $readmemb("dmem_64x256.mif", mem);
-
-        for (i = 0; i < 10; i = i + 1) begin
-            $display("behav_dmem: mem[%0d] = 0x%016h", i, mem[i]);
-        end
-    end
-
-    always @(posedge clka) begin
-        if (|wea) begin
-            for (b = 0; b < 8; b = b + 1) begin
-                if (wea[b]) mem[addra][8*b +: 8] <= dina[8*b +: 8];
-            end
-        end
-        douta <= mem[addra];
-    end
-
-    always @(posedge clkb) begin
-        if (|web) begin
-            for (bb = 0; bb < 8; bb = bb + 1) begin
-                if (web[bb]) mem[addrb][8*bb +: 8] <= dinb[8*bb +: 8];
-            end
-        end
-        doutb <= mem[addrb];
-    end
-
-endmodule
