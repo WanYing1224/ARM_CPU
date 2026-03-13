@@ -50,6 +50,7 @@ ENTITY dmem_64x256 IS
 	dinb: IN std_logic_VECTOR(63 downto 0);
 	douta: OUT std_logic_VECTOR(63 downto 0);
 	doutb: OUT std_logic_VECTOR(63 downto 0);
+	ena: IN std_logic;
 	wea: IN std_logic;
 	web: IN std_logic);
 END dmem_64x256;
@@ -66,6 +67,7 @@ component wrapped_dmem_64x256
 	dinb: IN std_logic_VECTOR(63 downto 0);
 	douta: OUT std_logic_VECTOR(63 downto 0);
 	doutb: OUT std_logic_VECTOR(63 downto 0);
+	ena: IN std_logic;
 	wea: IN std_logic;
 	web: IN std_logic);
 end component;
@@ -118,7 +120,7 @@ end component;
 			c_ymake_bmm => 0,
 			c_sim_collision_check => "NONE",
 			c_has_enb => 0,
-			c_has_ena => 0,
+			c_has_ena => 1,
 			c_mem_init_file => "dmem_64x256.mif",
 			c_depth_b => 256,
 			c_depth_a => 256,
@@ -138,6 +140,7 @@ U0 : wrapped_dmem_64x256
 			dinb => dinb,
 			douta => douta,
 			doutb => doutb,
+			ena => ena,
 			wea => wea,
 			web => web);
 -- synthesis translate_on

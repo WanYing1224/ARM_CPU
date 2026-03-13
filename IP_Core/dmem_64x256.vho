@@ -39,6 +39,7 @@ component dmem_64x256
 	dinb: IN std_logic_VECTOR(63 downto 0);
 	douta: OUT std_logic_VECTOR(63 downto 0);
 	doutb: OUT std_logic_VECTOR(63 downto 0);
+	ena: IN std_logic;
 	wea: IN std_logic;
 	web: IN std_logic);
 end component;
@@ -63,6 +64,7 @@ your_instance_name : dmem_64x256
 			dinb => dinb,
 			douta => douta,
 			doutb => doutb,
+			ena => ena,
 			wea => wea,
 			web => web);
 -- INST_TAG_END ------ End INSTANTIATION Template ------------
