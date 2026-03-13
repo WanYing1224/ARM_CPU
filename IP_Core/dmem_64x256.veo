@@ -40,7 +40,6 @@ dmem_64x256 YourInstanceName (
 	.dinb(dinb), // Bus [63 : 0] 
 	.douta(douta), // Bus [63 : 0] 
 	.doutb(doutb), // Bus [63 : 0] 
-	.ena(ena),
 	.wea(wea),
 	.web(web));
 

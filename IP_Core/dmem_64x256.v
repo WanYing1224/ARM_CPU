@@ -46,7 +46,6 @@ module dmem_64x256(
 	dinb,
 	douta,
 	doutb,
-	ena,
 	wea,
 	web);
 
@@ -59,9 +58,8 @@ input [63 : 0] dina;
 input [63 : 0] dinb;
 output [63 : 0] douta;
 output [63 : 0] doutb;
-input ena;
-input wea;
-input web;
+input [7 : 0] wea;
+input [7 : 0] web;
 
 // synthesis translate_off
 
@@ -77,7 +75,7 @@ input web;
 		.c_has_dinb(1),
 		.c_has_douta(1),
 		.c_has_doutb(1),
-		.c_has_ena(1),
+		.c_has_ena(0),
 		.c_has_enb(0),
 		.c_has_limit_data_pitch(0),
 		.c_has_nda(0),
@@ -127,9 +125,9 @@ input web;
 		.DINB(dinb),
 		.DOUTA(douta),
 		.DOUTB(doutb),
-		.ENA(ena),
 		.WEA(wea),
 		.WEB(web),
+		.ENA(),
 		.ENB(),
 		.NDA(),
 		.NDB(),
