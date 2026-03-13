@@ -58,8 +58,8 @@ input [63 : 0] dina;
 input [63 : 0] dinb;
 output [63 : 0] douta;
 output [63 : 0] doutb;
-input [7 : 0] wea;
-input [7 : 0] web;
+input wea;
+input web;
 
 // synthesis translate_off
 

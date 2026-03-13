@@ -1,7 +1,7 @@
 ##############################################################
 #
 # Xilinx Core Generator version K.31
-# Date: Fri Mar 13 07:57:10 2026
+# Date: Fri Mar 13 13:04:23 2026
 #
 ##############################################################
 #
@@ -35,7 +35,7 @@ SET vhdlsim = True
 SELECT Dual_Port_Block_Memory family Xilinx,_Inc. 6.3
 # END Select
 # BEGIN Parameters
-CSET coefficient_file=C:\EE533\Lab6\QuadThread_ARM_Core\coe_file\data_64bit.coe
+CSET coefficient_file=C:\EE533\Lab6\QuadThread_ARM_Core\coe_file\data.coe
 CSET component_name=dmem_64x256
 CSET configuration_port_a=Read_And_Write
 CSET configuration_port_b=Read_And_Write
@@ -72,5 +72,5 @@ CSET write_mode_port_a=Read_Before_Write
 CSET write_mode_port_b=Read_After_Write
 # END Parameters
 GENERATE
-# CRC: 86daf933
+# CRC: 8684181c
 
