@@ -5,7 +5,13 @@ module ARM_pipeline (
     input clk,
     input rst 
 );
-
+	 
+	 // Global Wire
+	 reg ex_is_branch;
+    reg [23:0] ex_branch_offset;
+    wire [31:0] ex_branch_target;
+    wire [31:0] signed_branch_offset;
+	 
     // =========================================================================
     // THREAD SCHEDULER: 2-bit Round-Robin
     // =========================================================================
@@ -33,17 +39,20 @@ module ARM_pipeline (
 
     always @(posedge clk) begin
         if (rst) begin
-            pc[0] <= 32'h000;
-            pc[1] <= 32'h400; 
-            pc[2] <= 32'h800;
-            pc[3] <= 32'hC00;
+            pc[0] <= 32'h000; 
+				pc[1] <= 32'h400; 
+				pc[2] <= 32'h800; 
+				pc[3] <= 32'hC00;
+            thread_sel <= 0;
         end else begin
-            // Stop incrementing if PC reaches 0x114 (the end of main)
-            // Note: 0x114 is the byte address; you may need to adjust 
-            // the offset (e.g., 0x514 for Thread 1) if they are separate programs.
-            if (curr_pc[9:0] < 10'h114) begin
-                pc[thread_sel] <= pc[thread_sel] + 4; 
+            // NEW: Hardware Branching Support
+            if (ex_is_branch && mem_cond_passed) begin
+                pc[ex_tid] <= ex_branch_target;
+            end 
+            else if (curr_pc[9:0] < 10'h114) begin
+                pc[thread_sel] <= pc[thread_sel] + 4;
             end
+            thread_sel <= thread_sel + 1;
         end
     end
 
@@ -68,7 +77,7 @@ module ARM_pipeline (
     
     // Writeback signals (from WB stage)
     wire wb_we;
-    wire [2:0] wb_addr;
+    wire [3:0] wb_addr;
     wire [63:0] wb_data;
 
     // RegFile outputs arrays
@@ -76,26 +85,26 @@ module ARM_pipeline (
     wire [63:0] id_r1 [3:0];
 	 
 	 wire is_store = (active_id_instr[27:26] == 2'b01) && (active_id_instr[20] == 1'b0);
-    wire [2:0] r1_addr_mux = is_store ? active_id_instr[14:12] : active_id_instr[2:0];
+    wire [3:0] r1_addr_mux = is_store ? active_id_instr[15:12] : active_id_instr[3:0];
+    wire [3:0] r0_addr_mux = active_id_instr[19:16];
 
     // Generate 4 RegFiles for 4 Threads 
     genvar i;
     generate
         for (i = 0; i < 4; i = i + 1) begin : REG_FILES
             reg_file RF (
-                .clk(clk),
-					 .rst(rst),
-                .wena(wb_we && (wb_tid == i)), // Only write to the active WB thread
+                .clk(clk), .rst(rst),
+                .wena(wb_we && (wb_tid == i)), 
                 .waddr(wb_addr),
                 .wdata(wb_data),
-                .r0addr(active_id_instr[18:16]),
+                .r0addr(r0_addr_mux), 
                 .r1addr(r1_addr_mux),
                 .r0data(id_r0[i]),
                 .r1data(id_r1[i])
             );
         end
     endgenerate
-
+	 
     // Select the operands for the thread currently in the ID stage
     wire [63:0] id_op1 = id_r0[id_tid];
     wire [63:0] id_op2 = id_r1[id_tid];
@@ -105,7 +114,7 @@ module ARM_pipeline (
     reg [63:0] ex_op1, ex_op2;
     reg [3:0] ex_aluctrl;
     reg ex_we, ex_mem_we;
-    reg [2:0] ex_waddr;
+    reg [3:0] ex_waddr;
     reg [63:0] ex_imm;
     reg ex_use_imm; // NEW: Tells ALU to use immediate
     reg ex_is_load; // NEW: Tells WB to use memory data
@@ -113,6 +122,8 @@ module ARM_pipeline (
     always @(posedge clk) begin
         if (rst) begin
             {ex_cond, ex_op1, ex_op2, ex_imm, ex_aluctrl, ex_we, ex_mem_we, ex_waddr, ex_use_imm, ex_is_load} <= 0;
+				ex_is_branch     <= 1'b0;
+            ex_branch_offset <= 24'd0;
         end else begin
             ex_cond    <= active_id_instr[31:28];
             ex_op1     <= id_op1;
@@ -134,6 +145,9 @@ module ARM_pipeline (
                           (active_id_instr[27:26] == 2'b01 && active_id_instr[20] == 1'b1);
             ex_mem_we  <= (active_id_instr[27:26] == 2'b01) && (active_id_instr[20] == 1'b0);
             ex_waddr   <= active_id_instr[14:12];
+				
+				ex_is_branch     <= (active_id_instr[27:26] == 2'b10);
+            ex_branch_offset <= active_id_instr[23:0];
         end
     end
 
@@ -153,8 +167,15 @@ module ARM_pipeline (
     wire [63:0] alu_res;
     wire alu_ovf;
     
-	// Instantiate your Lab 5 ALU
-	wire [63:0] alu_input_b = ex_use_imm ? ex_imm : ex_op2;
+	 // Instantiate your Lab 5 ALU
+	 wire [63:0] alu_input_b = ex_use_imm ? ex_imm : ex_op2;
+	
+	 // Branch Target Calculation (Using ASSIGN instead of WIRE)
+    // Extract the 24-bit offset, sign-extend it, and multiply by 4 (shift left by 2)
+    assign signed_branch_offset = {{6{ex_branch_offset[23]}}, ex_branch_offset, 2'b00};
+    
+    // Target = (PC + 4) + 4 + Offset = PC + 8 + Offset
+    assign ex_branch_target = pc[ex_tid] + 4 + signed_branch_offset;
 	 
     ALU_64bit MainALU (
         .clk(clk), .rst(rst),
@@ -177,7 +198,7 @@ module ARM_pipeline (
     // EX/MEM Register
     reg [63:0] mem_alu_res, mem_store_data;
     reg mem_we, mem_mem_we, mem_cond_passed, mem_is_load; // Added mem_is_load
-    reg [2:0] mem_waddr;
+    reg [3:0] mem_waddr;
 
     always @(posedge clk) begin
         if (rst) begin
@@ -204,21 +225,20 @@ module ARM_pipeline (
     
     // 8-bit Byte Enable mask based on bit [2] (the 4-byte offset)
     wire [7:0] wea_mask = mem_alu_res[2] ? 8'hF0 : 8'h0F;
-    wire [7:0] wea_bus  = actual_mem_write ? wea_mask : 8'h00;
-    
-    // Duplicate 32-bit data to both halves
-    wire [63:0] aligned_store_data = {mem_store_data[31:0], mem_store_data[31:0]};
+    wire [7:0] wea_bus = (mem_mem_we && mem_cond_passed) ? (mem_alu_res[2] ? 8'hF0 : 8'h0F) : 8'h00;
 
+    wire [63:0] aligned_store_data = mem_alu_res[2] ? {mem_store_data[31:0], 32'd0} : {32'd0, mem_store_data[31:0]};
+	 
     dmem_64x256 DataMem (
         .clka(clk),
         .wea(wea_bus),
-        .addra(addra_word),
+        .addra(mem_alu_res[9:2]),
         .dina(aligned_store_data),
         .douta(mem_out_raw),
-        .clkb(1'b0),
-        .web(8'd0),
-        .addrb(8'd0),
-        .dinb(64'd0),
+        .clkb(),
+        .web(),
+        .addrb(),
+        .dinb(),
         .doutb()
     );
 
@@ -253,10 +273,8 @@ module ARM_pipeline (
     assign wb_we   = wb_we_reg && wb_cond_passed_reg;
     assign wb_addr = wb_waddr_reg;
 
-    wire [31:0] extracted_32bit_word = wb_alu_res_reg[2] ?
-                                       wb_mem_data_reg[63:32] : 
-                                       wb_mem_data_reg[31:0];
+    wire [31:0] extracted_32bit = wb_alu_res_reg[2] ? mem_out_raw[63:32] : mem_out_raw[31:0];
 
-    assign wb_data = wb_is_load_reg ? extracted_32bit_word : wb_alu_res_reg[31:0];
+    assign wb_data = wb_is_load_reg ? {32'd0, extracted_32bit} : wb_alu_res_reg;
 	 
 endmodule

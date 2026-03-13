@@ -56,7 +56,7 @@ module ARM_pipeline_tb;
             $fdisplay(file_out, "=== Final Sorted Data Memory Content ===");
             
             // Loop through the first 5 lines (which hold 10 integers)
-            for (i = 0; i < 5; i = i + 1) begin
+            for (i = 0; i < 10; i = i + 1) begin
                 force uut.DataMem.addra = i[7:0];
                 #20; // Wait for memory read latency
                 
