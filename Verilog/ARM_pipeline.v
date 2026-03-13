@@ -7,7 +7,7 @@ module ARM_pipeline (
 );
 
     // =========================================================================
-    // THREAD SCHEDULER: 2-bit Round-Robin [cite: 185, 187]
+    // THREAD SCHEDULER: 2-bit Round-Robin
     // =========================================================================
     reg [1:0] thread_sel;
     reg [1:0] id_tid, ex_tid, mem_tid, wb_tid;
@@ -194,51 +194,66 @@ module ARM_pipeline (
     // STAGE 4: MEMORY (MEM)
     // =========================================================================
     wire [63:0] mem_out_raw;
-    wire actual_mem_write = mem_mem_we && mem_cond_passed; // Only write if condition passed
-	 wire [7:0] wea_bus = {8{actual_mem_write}};
-	 wire [7:0] addra_word = mem_alu_res[10:3];
+    wire actual_mem_write = mem_mem_we && mem_cond_passed;
+    
+    // Address for 64-bit BRAM (8-byte chunks)
+    wire [7:0] addra_word = mem_alu_res[10:3];
+    
+    // 8-bit Byte Enable mask based on bit [2] (the 4-byte offset)
+    wire [7:0] wea_mask = mem_alu_res[2] ? 8'hF0 : 8'h0F;
+    wire [7:0] wea_bus  = actual_mem_write ? wea_mask : 8'h00;
+    
+    // Duplicate 32-bit data to both halves
+    wire [63:0] aligned_store_data = {mem_store_data[31:0], mem_store_data[31:0]};
 
-    // Data Memory Instantiation 
     dmem_64x256 DataMem (
         .clka(clk),
         .wea(wea_bus),
         .addra(addra_word),
-        .dina(mem_store_data),
+        .dina(aligned_store_data),
         .douta(mem_out_raw),
         .clkb(1'b0),
-        .web(|wea),         // <-- 8-bit constant
+        .web(8'd0),
         .addrb(8'd0),
         .dinb(64'd0),
         .doutb()
     );
 
-    // MEM/WB Register
-    reg [63:0] wb_alu_res_reg, wb_mem_data_reg;
-    reg wb_we_reg, wb_cond_passed_reg, wb_is_load_reg; // Added wb_is_load_reg
-    reg [2:0] wb_waddr_reg;
+    // --- MEM/WB Pipeline Registers ---
+    reg [31:0] wb_alu_res_reg;   // Changed to 32-bit
+    reg [63:0] wb_mem_data_reg;  // Stays 64-bit to hold both words
+    reg [3:0]  wb_waddr_reg;     // ARM uses 4-bit register addresses (0-15)
+    reg        wb_we_reg, wb_cond_passed_reg, wb_is_load_reg;
 
     always @(posedge clk) begin
         if (rst) begin
-            {wb_alu_res_reg, wb_mem_data_reg, wb_we_reg, wb_waddr_reg, wb_cond_passed_reg, wb_is_load_reg} <= 0;
+            wb_alu_res_reg     <= 0;
+            wb_mem_data_reg    <= 0;
+            wb_we_reg          <= 0;
+            wb_waddr_reg       <= 0;
+            wb_cond_passed_reg <= 0;
+            wb_is_load_reg     <= 0;
         end else begin
             wb_alu_res_reg     <= mem_alu_res;
-            wb_mem_data_reg    <= mem_out_raw;
+            wb_mem_data_reg    <= mem_out_raw; // Pass the raw 64-bit line
             wb_we_reg          <= mem_we;
             wb_waddr_reg       <= mem_waddr;
             wb_cond_passed_reg <= mem_cond_passed;
-            wb_is_load_reg     <= mem_is_load; // Pass it down
+            wb_is_load_reg     <= mem_is_load;
         end
     end
 
     // =========================================================================
     // STAGE 5: WRITE BACK (WB)
     // =========================================================================
-    // Write back to RegFile if it was a RegWrite instruction AND condition passed
+
     assign wb_we   = wb_we_reg && wb_cond_passed_reg;
     assign wb_addr = wb_waddr_reg;
+
+    wire [31:0] extracted_32bit_word = wb_alu_res_reg[2] ? 
+                                       wb_mem_data_reg[63:32] : 
+                                       wb_mem_data_reg[31:0];
+
+    assign wb_data = wb_is_load_reg ? extracted_32bit_word : wb_alu_res_reg[31:0];
 	 
-	 wire [63:0] mem_data_sign_extended = { {32{wb_mem_data_reg[31]}}, wb_mem_data_reg[31:0] };
-    
-    // CRITICAL FIX: Select between Memory Data (LDR) and ALU Result (ADD/SUB)
-    assign wb_data = wb_is_load_reg ? mem_data_sign_extended : wb_alu_res_reg;
 endmodule
